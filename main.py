@@ -1,3 +1,4 @@
+import asyncio.subprocess
 import os
 import subprocess
 from dataclasses import dataclass
@@ -38,7 +39,6 @@ class Config:
         self.file_path = file_path
         with open(file_path, "rb") as fp:
             doc = tomlkit.load(fp)
-            self.doc = doc
         self.ytp_dlp_dir = doc["yt-dlp"]["directory"]
         self.ytp_dlp_path = os.path.join(self.ytp_dlp_dir, "yt_dlp", "__main__.py")
         self.input_file = input_file
@@ -90,7 +90,7 @@ class Config:
             extractors.add(cfg.id, extractor)
         doc.add("extractor", extractors)
 
-        with open("auto-generation.toml", "w") as fp:
+        with open(self.file_path, "w") as fp:
             tomlkit.dump(doc, fp)
 
 
@@ -121,48 +121,52 @@ class Cli:
             check=True,
         )
 
-    def determine_extractors(self, urls: list[str]) -> str:
-        cp = subprocess.run(
-            [
-                "python",
-                self.config.ytp_dlp_path,
-                "--no-playlist",
-                "--print",
-                "%(extractor)s",
-                *urls,
-            ],
-            universal_newlines=True,
+    async def determine_extractor(self, url: str) -> tuple[str, str]:
+        args = [
+            self.config.ytp_dlp_path,
+            "--no-playlist",
+            "--print",
+            "extractor",
+            url,
+        ]
+        process = await asyncio.create_subprocess_exec(
+            "python",
+            *args,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
-        return cp.stdout.strip()
+        stdout, stderr = await process.communicate()
+        return url, stdout.decode().strip()
 
-    def create_metadatas(self, lines: list[str], src: str) -> list[Metadata]:
-        items = []
+    async def create_metadatas(self, lines: list[str], src: str) -> list[Metadata]:
+        tasks = []
+        url_opts = {}
         for line in lines:
             if not line or line.startswith("#"):
                 continue
             parts = line.split()
             opts = parts[:-1]
             url = parts[-1]
-            items.append((opts, url))
-        output = self.determine_extractors([url for _, url in items])
-        output_lines = output.splitlines()
+            url_opts[url] = opts
+            task = self.determine_extractor(url)
+            tasks.append(task)
+        results = await asyncio.gather(*tasks)
         metadatas = []
-        for (opts, url), line in zip(items, output_lines):
-            if line.startswith("ERROR"):
+        for url, output in results:
+            if output.startswith("ERROR"):
                 left_bracket = len("ERROR: ")
-                if line[left_bracket] != "[":
+                if output[left_bracket] != "[":
                     extractor = None
-                    error = line[left_bracket:]
+                    error = output[left_bracket:]
                 else:
-                    right_bracket = line.index("]", left_bracket + 1)
-                    extractor = line[left_bracket + 1 : right_bracket]
-                    error = line[right_bracket + 2 :]
+                    right_bracket = output.index("]", left_bracket + 1)
+                    extractor = output[left_bracket + 1 : right_bracket]
+                    # error = output[right_bracket + 2 :]
+                    error = None
             else:
-                extractor = line
+                extractor = output
                 error = None
-            metadata = Metadata(url, src, opts, extractor, error)
+            metadata = Metadata(url, src, url_opts[url], extractor, error)
             metadatas.append(metadata)
         return metadatas
 
@@ -172,10 +176,10 @@ class Cli:
             with open(self.config.input_file) as fp:
                 input_data = fp.read()
             lines = [line.strip() for line in input_data.splitlines()]
-            src_metadatas = self.create_metadatas(lines, "file")
+            src_metadatas = asyncio.run(self.create_metadatas(lines, "file"))
             metadatas.extend(src_metadatas)
         if self.config.urls:
-            src_metadatas = self.create_metadatas(self.config.urls, "arg")
+            src_metadatas = asyncio.run(self.create_metadatas(self.config.urls, "arg"))
             metadatas.extend(src_metadatas)
         return metadatas
 
@@ -226,7 +230,9 @@ class Cli:
         self.config.save()
         for metadata, extractor_id in extractors:
             if metadata.error:
-                click.echo(f"[{metadata.extractor}] ERROR: {metadata.error}")
+                click.echo(
+                    f"[{metadata.extractor} | {metadata.url}] ERROR: {metadata.error}"
+                )
             else:
                 click.echo(f"[{metadata.extractor}] Downloading {metadata.url}")
                 self.download(metadata, extractor_id)

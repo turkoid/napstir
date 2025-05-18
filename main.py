@@ -35,7 +35,12 @@ class ExtractorConfig:
 
 class Config:
     def __init__(
-        self, file_path: str, input_file: str, output_dir: str, urls: list[str]
+        self,
+        file_path: str,
+        input_file: str,
+        output_dir: str,
+        verbose: bool,
+        urls: list[str],
     ) -> None:
         self.file_path = file_path
         with open(file_path, "rb") as fp:
@@ -44,6 +49,7 @@ class Config:
         self.ytp_dlp_path = os.path.join(self.ytp_dlp_dir, "yt_dlp", "__main__.py")
         self.input_file = input_file
         self.output_dir = output_dir
+        self.verbose = verbose
         self.urls = urls
         self.extractor_configs: dict[str, ExtractorConfig] = {}
         self.default_extractor = ExtractorConfig(
@@ -222,6 +228,8 @@ class Cli:
         else:
             cmd.extend(self.config.extractor_configs[extractor_id].args)
         cmd.extend(metadata.options)
+        if self.config.verbose:
+            cmd.append("-v")
         cmd.append(metadata.url)
         subprocess.run(cmd, cwd=self.config.output_dir)
 
@@ -242,9 +250,10 @@ class Cli:
 @click.command(no_args_is_help=True)
 @click.option("-i", "--input", "input_file", type=click.Path(exists=True))
 @click.option("-o", "--output", "output_dir", type=click.Path())
+@click.option("-v", "--verbose", is_flag=True, default=False)
 @click.argument("urls", nargs=-1)
-def run(input_file: str, output_dir: str, urls: list[str]):
-    config = Config("config.toml", input_file, output_dir, urls)
+def run(input_file: str, output_dir: str, verbose: bool, urls: list[str]):
+    config = Config("config.toml", input_file, output_dir, verbose, urls)
     cli = Cli(config)
     cli.update_yt_dlp()
     cli.main()

@@ -9,6 +9,7 @@ import click
 import tomlkit
 from tomlkit import array
 from tomlkit import document
+from tomlkit import string
 from tomlkit import table
 
 
@@ -64,8 +65,8 @@ class Config:
         doc = document()
 
         yt_dlp = table()
-        yt_dlp.add("directory", self.ytp_dlp_dir)
-        doc.add("yt-dlp", yt_dlp)
+        yt_dlp.append("directory", string(self.ytp_dlp_dir, literal=True))
+        doc.append("yt-dlp", yt_dlp)
 
         extractors = table(True)
         custom_extractors = sorted(
@@ -82,13 +83,13 @@ class Config:
                 aliases = array()
                 aliases.extend(cfg.aliases)
                 aliases.multiline(True)
-                extractor.add("aliases", aliases)
+                extractor.append("aliases", aliases)
             args = array()
             args.extend(cfg.args)
             args.multiline(True)
-            extractor.add("args", args)
-            extractors.add(cfg.id, extractor)
-        doc.add("extractor", extractors)
+            extractor.append("args", args)
+            extractors.append(cfg.id, extractor)
+        doc.append("extractor", extractors)
 
         with open(self.file_path, "w") as fp:
             tomlkit.dump(doc, fp)
@@ -245,7 +246,6 @@ class Cli:
 def run(input_file: str, output_dir: str, urls: list[str]):
     config = Config("config.toml", input_file, output_dir, urls)
     cli = Cli(config)
-    cli.config.save()
     cli.update_yt_dlp()
     cli.main()
 

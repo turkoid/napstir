@@ -109,6 +109,18 @@ class Metadata:
     extractor: str | None = None
     error: str | None = None
 
+    def __post_init__(self):
+        converted_opts = []
+        for opt in self.options:
+            if opt == "-a" or opt.startswith("-a:"):
+                converted_opts.append("--extract-audio")
+                if ":" in opt and (audio_format := opt[3:]):
+                    converted_opts.append("--audio-format")
+                    converted_opts.append(audio_format)
+            else:
+                converted_opts.append(opt)
+        self.options = converted_opts
+
     @property
     def id(self) -> str | None:
         return self.extractor.lower() if self.extractor else None
@@ -168,7 +180,6 @@ class Cli:
                 else:
                     right_bracket = output.index("]", left_bracket + 1)
                     extractor = output[left_bracket + 1 : right_bracket]
-                    # error = output[right_bracket + 2 :]
                     error = None
             else:
                 extractor = output

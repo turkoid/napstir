@@ -142,6 +142,8 @@ class Cli:
 
     async def determine_extractor(self, url: str) -> tuple[str, str]:
         args = [
+            "--quiet",
+            "run",
             self.config.ytp_dlp_path,
             "--no-playlist",
             "--print",
@@ -149,10 +151,11 @@ class Cli:
             url,
         ]
         process = await asyncio.create_subprocess_exec(
-            "python",
+            "uv",
             *args,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            cwd=self.config.ytp_dlp_dir,
         )
         stdout, stderr = await process.communicate()
         return url, stdout.decode().strip()
@@ -230,7 +233,11 @@ class Cli:
 
     def download(self, metadata: Metadata, extractor_id: str):
         cmd = [
-            "python",
+            "uv",
+            "--quiet",
+            "--project",
+            self.config.ytp_dlp_dir,
+            "run",
             self.config.ytp_dlp_path,
         ]
         cmd.extend(self.config.global_extractor.args)
@@ -261,7 +268,7 @@ class Cli:
 @click.command(no_args_is_help=True)
 @click.option("-i", "--input", "input_file", type=click.Path(exists=True))
 @click.option("-o", "--output", "output_dir", type=click.Path())
-@click.option("-v", "--verbose", is_flag=True, default=False)
+@click.option("-v", "--verbose", is_flag=True)
 @click.argument("urls", nargs=-1)
 def run(input_file: str, output_dir: str, verbose: bool, urls: list[str]):
     config = Config("config.toml", input_file, output_dir, verbose, urls)

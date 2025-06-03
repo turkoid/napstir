@@ -255,7 +255,13 @@ class Cli:
         metadatas = self.get_metadatas()
         extractors = self.get_extractors(metadatas)
         self.config.save()
+        header_len = max([len(md.url) for md in metadatas])
+        header_line = "-" * (header_len + 2)
+        header_line = f"+{header_line}+"
         for metadata, extractor_id in extractors:
+            click.echo(
+                f"{header_line}\n| {metadata.url:<{header_len+1}}|\n{header_line}"
+            )
             if metadata.error:
                 click.echo(
                     f"[{metadata.extractor} | {metadata.url}] ERROR: {metadata.error}"

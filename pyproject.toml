@@ -5,7 +5,12 @@ description = "Add your description here"
 requires-python = ">=3.12"
 dependencies = [
     "click==8.2.0",
-    "pre-commit==4.2.0",
-    "ruff==0.11.10",
     "tomlkit==0.13.2",
+    "yt-dlp[default]>=2025.11.12",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.4.0",
+    "ruff>=0.11.10",
 ]

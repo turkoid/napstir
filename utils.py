@@ -1,4 +1,3 @@
-import sys
 from typing import Any
 
 import click
@@ -8,7 +7,7 @@ from yt_dlp.extractor.generic import GenericIE
 
 
 class ArgsConverter:
-    def __init__(self):
+    def __init__(self) -> None:
         self.default_options: dict[str, Any] = yt_dlp.parse_options([]).ydl_opts
 
     def convert(self, args: list[str]) -> dict[str, Any]:
@@ -22,7 +21,7 @@ class ArgsConverter:
 
 
 class LogCatcher:
-    def __init__(self, print_to_stdout: bool = False):
+    def __init__(self, print_to_stdout: bool = False) -> None:
         self.logs: dict[str, list[str]] = {
             "debug": [],
             "info": [],
@@ -103,17 +102,3 @@ def determine_extractor(url: str) -> str:
         except Exception:
             pass
     return GenericIE.IE_NAME
-
-
-if __name__ == "__main__":
-    urls = [
-        "https://watch.dropout.tv/videos/very-important-people-season-3-trailer",
-        "https://watch.dropout.tv/new-releases/videos/doggone-good",
-    ]
-    for url in urls:
-        extractor = determine_extractor(url)
-        print(extractor)
-    quit()
-    cli_options = ArgsConverter()
-    opts = cli_options.convert(sys.argv[1:])
-    click.echo(opts)

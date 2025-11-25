@@ -9,6 +9,7 @@ from tomlkit import array
 from yt_dlp import YoutubeDL
 
 from utils import ArgsConverter
+from utils import determine_extractor
 from utils import has_downloadable_formats
 from utils import LogCatcher
 from utils import sanitize_args
@@ -179,14 +180,10 @@ class Cli:
             logger = LogCatcher(self.config.verbose)
             info = self.extract_info(url, args, logger)
             errors = logger.error_messages
-            # default to extractor from error message if one exists
-            if logger.error_logs:
-                extractor = logger.error_logs[-1][0]
-            else:
-                extractor = None
-            # override extractor key if it exists in info
             if info and "extractor_key" in info:
                 extractor = info["extractor_key"]
+            else:
+                extractor = determine_extractor(url)
             if has_downloadable_formats(info):
                 errors = None
             else:

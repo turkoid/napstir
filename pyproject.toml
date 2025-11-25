@@ -1,7 +1,7 @@
 [project]
 name = "napstir"
-version = "0.1.0"
-description = "Add your description here"
+version = "1.0.0"
+description = "STOP ALL THE DOWNLOADING"
 requires-python = ">=3.12"
 dependencies = [
     "click==8.2.0",
@@ -17,4 +17,4 @@ dev = [
 ]
 
 [tool.uv.sources]
-yt-dl-turkoid-plugin = { git = "https://github.com/turkoid/yt-dl-turkoid-plugin" }
+yt-dl-turkoid-plugin = { git = "https://github.com/turkoid/yt-dl-turkoid-plugin"}

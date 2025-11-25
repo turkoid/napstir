@@ -1,9 +1,10 @@
-import re
 import sys
 from typing import Any
 
 import click
 import yt_dlp
+from yt_dlp import list_extractor_classes
+from yt_dlp.extractor.generic import GenericIE
 
 
 class ArgsConverter:
@@ -20,12 +21,9 @@ class ArgsConverter:
         return opts
 
 
-type LogMessage = tuple[str | None, str]
-
-
 class LogCatcher:
     def __init__(self, print_to_stdout: bool = False):
-        self.logs: dict[str, list[LogMessage]] = {
+        self.logs: dict[str, list[str]] = {
             "debug": [],
             "info": [],
             "warning": [],
@@ -34,13 +32,7 @@ class LogCatcher:
         self.print_to_stdout = print_to_stdout
 
     def log(self, level: str, msg: str) -> None:
-        if match := re.match(r"(.+?: )?(\[(?P<extractor>.+?)] )?(?P<msg>.+)", msg):
-            extractor = match.group("extractor")
-            message = match.group("msg")
-        else:
-            extractor = None
-            message = msg
-        self.logs[level].append((extractor, message))
+        self.logs[level].append(msg)
         if self.print_to_stdout:
             click.echo(msg, err=level == "error")
 
@@ -57,8 +49,7 @@ class LogCatcher:
         self.log("error", msg)
 
     def messages(self, level: str) -> list[str]:
-        messages = [msg for _, msg in self.logs[level]]
-        return messages
+        return self.logs[level]
 
     @property
     def debug_messages(self) -> list[str]:
@@ -75,22 +66,6 @@ class LogCatcher:
     @property
     def error_messages(self) -> list[str]:
         return self.messages("error")
-
-    @property
-    def debug_logs(self) -> list[LogMessage]:
-        return self.logs["debug"]
-
-    @property
-    def info_logs(self) -> list[LogMessage]:
-        return self.logs["info"]
-
-    @property
-    def warning_logs(self) -> list[LogMessage]:
-        return self.logs["warning"]
-
-    @property
-    def error_logs(self) -> list[LogMessage]:
-        return self.logs["error"]
 
 
 def has_downloadable_formats(info: dict) -> bool:
@@ -119,7 +94,26 @@ def sanitize_args(raw_args: list[str], restricted_args: list[str] = None) -> lis
     return sanitized_args
 
 
+def determine_extractor(url: str) -> str:
+    extractors = list_extractor_classes()
+    for extractor in extractors:
+        try:
+            if extractor.suitable(url):
+                return extractor.IE_NAME
+        except Exception:
+            pass
+    return GenericIE.IE_NAME
+
+
 if __name__ == "__main__":
+    urls = [
+        "https://watch.dropout.tv/videos/very-important-people-season-3-trailer",
+        "https://watch.dropout.tv/new-releases/videos/doggone-good",
+    ]
+    for url in urls:
+        extractor = determine_extractor(url)
+        print(extractor)
+    quit()
     cli_options = ArgsConverter()
     opts = cli_options.convert(sys.argv[1:])
     click.echo(opts)

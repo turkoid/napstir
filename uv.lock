@@ -637,8 +637,8 @@ wheels = [
 
 [[package]]
 name = "yt-dl-turkoid-plugin"
-version = "1.0.1"
-source = { git = "https://github.com/turkoid/yt-dl-turkoid-plugin#dadf5d3767175336a9db42eed8218d7a399e39fd" }
+version = "1.1.0"
+source = { git = "https://github.com/turkoid/yt-dl-turkoid-plugin#fb8dfa4266bd983d520ea6d8c4c20956eb374d04" }
 dependencies = [
     { name = "bs4" },
     { name = "lxml" },

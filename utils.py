@@ -3,7 +3,6 @@ from typing import Any
 import click
 import yt_dlp
 from yt_dlp import list_extractor_classes
-from yt_dlp.extractor.generic import GenericIE
 
 
 class ArgsConverter:
@@ -93,7 +92,7 @@ def sanitize_args(raw_args: list[str], restricted_args: list[str] = None) -> lis
     return sanitized_args
 
 
-def determine_extractor(url: str) -> str:
+def determine_extractor(url: str) -> str | None:
     extractors = list_extractor_classes()
     for extractor in extractors:
         try:
@@ -101,4 +100,15 @@ def determine_extractor(url: str) -> str:
                 return extractor.IE_NAME
         except Exception:
             pass
-    return GenericIE.IE_NAME
+    return None
+
+
+def safe_dict(d: dict, *keys, default=None) -> Any:
+    value = d
+    for key in keys:
+        if key in value:
+            value = value[key]
+        else:
+            value = default
+            break
+    return value

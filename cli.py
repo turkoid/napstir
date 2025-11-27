@@ -1,17 +1,16 @@
 import os
 from dataclasses import dataclass
 from dataclasses import field
+from functools import partial
 
 import click
 import tomlkit
-import yt_dlp
 from tomlkit import array
 from yt_dlp import YoutubeDL
 
 from utils import ArgsConverter
 from utils import determine_extractor
-from utils import has_downloadable_formats
-from utils import LogCatcher
+from utils import safe_dict
 from utils import sanitize_args
 
 
@@ -66,7 +65,7 @@ class Config:
             for alias in cfg.aliases:
                 self.aliased_extractors[alias] = cfg.id
 
-    def save(self):
+    def save(self) -> None:
         for extractor in self.extractor_configs.values():
             if not extractor.aliases:
                 continue
@@ -91,17 +90,9 @@ RESTRICTED_ARGS = [
     "-h",
     "--help",
     "-U",
-    "--update" "--update-to",
-    "--list-extractor",
-    "--extractor-descriptions",
+    "--update--update-to",
     "--use-extractors",
-    "--no-quiet",
-    "-s",
-    "--simulate",
-    "--no-simulate",
-    "--ignore-no-formats-error",
     "--no-ignore-no-formats-error",
-    "--skip-download",
     "-O",
     "--print",
     "-j",
@@ -123,11 +114,12 @@ class Metadata:
     src: str
     args: list[str] = field(default_factory=list)
     extractor: str | None = None
-    info: dict | None = None
-    errors: list[str] = field(default_factory=list)
-    config_extractor: str | None = field(default=None, init=False)
+    config_extractor: str | None = None
+    info: dict | None = field(init=False, default=None)
+    files: dict[str, str] = field(init=False, default_factory=dict)
+    processed: bool = field(init=False, default=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         converted_args = []
         for arg in self.args:
             if arg == "-a" or arg.startswith("-a:"):
@@ -135,64 +127,20 @@ class Metadata:
                 if ":" in arg and (audio_format := arg[3:]):
                     converted_args.append("--audio-format")
                     converted_args.append(audio_format)
-        sanitized_args = sanitize_args(converted_args, RESTRICTED_ARGS)
-        self.args = sanitized_args
+        self.args = converted_args
 
     @property
     def id(self) -> str | None:
         return self.extractor.lower() if self.extractor else None
+
+    def echo(self, msg: str, err: bool = False) -> None:
+        click.echo(f"[{self.extractor}] {msg}", err=err)
 
 
 class Cli:
     def __init__(self, config: Config) -> None:
         self.config = config
         self.args_converter = ArgsConverter()
-
-    def extract_info(
-        self, url: str, custom_args: list[str], logger: LogCatcher
-    ) -> dict:
-        args = [
-            "--quiet",
-            "--no-warnings",
-            "--no-playlist",
-            "--simulate",
-            "--flat-playlist",
-            "--check-formats",
-            "--ignore-errors",
-        ]
-        args.extend(custom_args)
-        opts = self.args_converter.convert(args)
-        opts["logger"] = logger
-
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            click.echo(f"Extracting info for {url}")
-            info = ydl.extract_info(url, download=False)
-            return info
-
-    def create_metadatas(self, entries: list[str], src: str) -> list[Metadata]:
-        metadatas = []
-        for entry in entries:
-            if not entry or entry.startswith("#"):
-                continue
-            parts = entry.split()
-            args = parts[:-1]
-            url = parts[-1]
-            logger = LogCatcher(self.config.verbose)
-            info = self.extract_info(url, args, logger)
-            errors = logger.error_messages
-            if info and "extractor_key" in info:
-                extractor = info["extractor_key"]
-            else:
-                extractor = determine_extractor(url)
-            if has_downloadable_formats(info):
-                errors = None
-            else:
-                info = None
-            if extractor:
-                errors = None
-            metadata = Metadata(url, src, args, extractor, info, errors)
-            metadatas.append(metadata)
-        return metadatas
 
     def find_the_next_best_thing(self, metadata: Metadata) -> str | None:
         # Good Mythical Morning
@@ -208,10 +156,16 @@ class Cli:
                     return extractor
         return None
 
-    def set_config_extractors(self, metadatas: list[Metadata]) -> None:
-        for metadata in metadatas:
-            if metadata.errors or metadata.id is None:
+    def create_metadatas(self, entries: list[str], src: str) -> list[Metadata]:
+        metadatas = []
+        for entry in entries:
+            if not entry or entry.startswith("#"):
                 continue
+            parts = entry.split()
+            url = parts[-1]
+            args = parts[:-1]
+            extractor = determine_extractor(url)
+            metadata = Metadata(url, src, args, extractor, None)
             if metadata.id in self.config.extractor_configs:
                 config_extractor = metadata.id
             elif metadata.id in self.config.aliased_extractors:
@@ -219,6 +173,8 @@ class Cli:
             else:
                 config_extractor = self.find_the_next_best_thing(metadata)
             metadata.config_extractor = config_extractor
+            metadatas.append(metadata)
+        return metadatas
 
     def download(self, metadata: Metadata) -> None:
         args = self.config.global_extractor.args[:]
@@ -231,15 +187,36 @@ class Cli:
         args.extend(metadata.args)
         if self.config.verbose:
             args.append("-v")
+        args = sanitize_args(args, RESTRICTED_ARGS)
         opts = self.args_converter.convert(args)
+
+        def hook(src: str, data: dict) -> None:
+            metadata.processed = True
+            if data["status"] == "finished":
+                files = []
+                if src == "process" and "filename" in data:
+                    files.append(data["filename"])
+                elif src == "post-process":
+                    files = list(
+                        safe_dict(
+                            data, "info_dict", "__files_to_move", default={}
+                        ).keys()
+                    )
+                for file in files:
+                    metadata.files[file] = src
+
+        opts["progress_hooks"] = [partial(hook, "process")]
+        opts["postprocessor_hooks"] = [partial(hook, "post-process")]
+
         with YoutubeDL(opts) as ytdl:
+            metadata.info = ytdl.extract_info(metadata.url, download=False)
             if metadata.info:
+                filename = ytdl.prepare_filename(metadata.info)
+                metadata.files[filename] = "pre-process"
                 ytdl.process_ie_result(metadata.info)
-            else:
-                ytdl.download(metadata.url)
 
     def run(self) -> None:
-        metadatas = []
+        metadatas: list[Metadata] = []
 
         if self.config.input_file:
             with open(self.config.input_file) as fp:
@@ -254,7 +231,6 @@ class Cli:
         if not metadatas:
             return
 
-        self.set_config_extractors(metadatas)
         self.config.save()
 
         header_len = max([len(md.url) for md in metadatas])
@@ -264,12 +240,26 @@ class Cli:
             click.echo(
                 f"{header_line}\n| {metadata.url:<{header_len + 1}}|\n{header_line}"
             )
-            if metadata.errors:
-                for error in metadata.errors:
-                    click.echo(f"[{metadata.extractor}] {error}")
+            metadata.echo(f"Processing {metadata.url}")
+            self.download(metadata)
+            if metadata.processed:
+                files = [
+                    file
+                    for file, src in metadata.files.items()
+                    if src in ["process", "post-process"] and os.path.exists(file)
+                ]
             else:
-                click.echo(f"[{metadata.extractor}] Downloading {metadata.url}")
-                self.download(metadata)
+                files = [
+                    file for file, src in metadata.files.items() if src == "pre-process"
+                ]
+            if files:
+                files_str = "\n\t".join(files)
+                if metadata.processed:
+                    metadata.echo(f"Downloaded {len(files)} file(s):\n\t{files_str}")
+                else:
+                    metadata.echo(f"Potential file(s):\n\t{files_str}")
+            else:
+                metadata.echo("No files found!")
 
 
 @click.command(no_args_is_help=True)
@@ -282,7 +272,7 @@ class Cli:
 @click.argument("urls", nargs=-1)
 def run(
     config_file: str, input_file: str, output_dir: str, verbose: bool, urls: list[str]
-):
+) -> None:
     config = Config(config_file, input_file, output_dir, verbose, urls)
     cli = Cli(config)
     cli.run()

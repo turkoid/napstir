@@ -1,8 +1,12 @@
+from functools import lru_cache
 from typing import Any
 
 import click
 import yt_dlp
 from yt_dlp import list_extractor_classes
+from yt_dlp.extractor.generic import GenericIE
+from yt_dlp.extractor.lazy_extractors import GenericIE as LazyGenericIE
+from yt_dlp.plugins import load_all_plugins
 
 
 class ArgsConverter:
@@ -92,15 +96,34 @@ def sanitize_args(raw_args: list[str], restricted_args: list[str] = None) -> lis
     return sanitized_args
 
 
-def determine_extractor(url: str) -> str | None:
+@lru_cache(maxsize=1)
+def get_all_extractors(plugins_first: bool = True) -> list:
+    load_all_plugins()
     extractors = list_extractor_classes()
+    if plugins_first:
+        plugins = []
+        base_extractors = []
+        for extractor in extractors:
+            if extractor.__module__.startswith("yt_dlp_plugins."):
+                plugins.append(extractor)
+            else:
+                base_extractors.append(extractor)
+        extractors = plugins
+        extractors.extend(base_extractors)
+    return extractors
+
+
+def determine_extractor(url: str) -> str | None:
+    extractors = get_all_extractors()
     for extractor in extractors:
+        if extractor in [GenericIE, LazyGenericIE]:
+            continue
         try:
             if extractor.suitable(url):
                 return extractor.IE_NAME
         except Exception:
             pass
-    return None
+    return GenericIE.IE_NAME
 
 
 def safe_dict(d: dict, *keys, default=None) -> Any:

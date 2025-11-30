@@ -36,6 +36,7 @@ class Config:
         input_file: str,
         output_dir: str,
         verbose: bool,
+        simulate: bool,
         urls: list[str],
     ) -> None:
         self.file_path = file_path
@@ -46,6 +47,7 @@ class Config:
         self.input_file = input_file
         self.output_dir = output_dir
         self.verbose = verbose
+        self.simulate = simulate
         self.urls = urls
         self.extractor_configs: dict[str, ExtractorConfig] = {}
         self.default_extractor = ExtractorConfig(
@@ -167,7 +169,7 @@ class Cli:
             metadatas.append(metadata)
         return metadatas
 
-    def download(self, metadata: Metadata) -> None:
+    def process(self, metadata: Metadata) -> None:
         args = self.config.global_extractor.args[:]
         if self.config.output_dir:
             args.extend(["--paths", self.config.output_dir])
@@ -176,9 +178,11 @@ class Cli:
         else:
             args.extend(self.config.extractor_configs[metadata.config_extractor].args)
         args.extend(metadata.args)
+        args = sanitize_args(args, RESTRICTED_ARGS)
         if self.config.verbose:
             args.append("-v")
-        args = sanitize_args(args, RESTRICTED_ARGS)
+        if self.config.simulate:
+            args.append("--simulate")
         opts = self.args_converter.convert(args)
 
         def hook(src: str, data: dict) -> None:
@@ -232,7 +236,7 @@ class Cli:
                 f"{header_line}\n| {metadata.url:<{header_len + 1}}|\n{header_line}"
             )
             metadata.echo(f"Processing {metadata.url}")
-            self.download(metadata)
+            self.process(metadata)
             if metadata.processed:
                 files = [
                     file
@@ -244,6 +248,7 @@ class Cli:
                     file for file, src in metadata.files.items() if src == "pre-process"
                 ]
             if files:
+                files = [os.path.abspath(f) for f in files]
                 files_str = "\n\t".join(files)
                 if metadata.processed:
                     metadata.echo(f"Downloaded {len(files)} file(s):\n\t{files_str}")
@@ -260,11 +265,17 @@ class Cli:
 @click.option("-i", "--input", "input_file", type=click.Path(exists=True))
 @click.option("-o", "--output", "output_dir", type=click.Path())
 @click.option("-v", "--verbose", is_flag=True)
+@click.option("-s", "--simulate", is_flag=True)
 @click.argument("urls", nargs=-1)
 def run(
-    config_file: str, input_file: str, output_dir: str, verbose: bool, urls: list[str]
+    config_file: str,
+    input_file: str,
+    output_dir: str,
+    verbose: bool,
+    simulate: bool,
+    urls: list[str],
 ) -> None:
-    config = Config(config_file, input_file, output_dir, verbose, urls)
+    config = Config(config_file, input_file, output_dir, verbose, simulate, urls)
     cli = Cli(config)
     cli.run()
 

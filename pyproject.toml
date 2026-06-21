@@ -18,3 +18,4 @@ dev = [
 
 [tool.uv.sources]
 yt-dl-turkoid-plugin = { git = "https://github.com/turkoid/yt-dl-turkoid-plugin"}
+#yt-dl-turkoid-plugin = { path = "C:/home/dev/python/yt-dl-turkoid-plugin", editable = true }

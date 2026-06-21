@@ -1,4 +1,5 @@
 import os
+import re
 from dataclasses import dataclass
 from dataclasses import field
 from functools import partial
@@ -100,6 +101,8 @@ RESTRICTED_ARGS = [
     "--batch-file",
 ]
 
+PLAYLIST_SLICE = re.compile(r"(.+)\[([\d:]+)]")
+
 
 @dataclass
 class Metadata:
@@ -120,7 +123,14 @@ class Metadata:
                 if ":" in arg and (audio_format := arg[3:]):
                     converted_args.append("--audio-format")
                     converted_args.append(audio_format)
+            else:
+                converted_args.append(arg)
         self.args = converted_args
+        if match := re.fullmatch(PLAYLIST_SLICE, self.url):
+            self.url, slice = match.groups()
+            self.args.extend(["--playlist-items", slice])
+        if not self.extractor:
+            self.extractor = determine_extractor(self.url)
 
     @property
     def id(self) -> str | None:
@@ -157,8 +167,7 @@ class Cli:
             parts = entry.split()
             url = parts[-1]
             args = parts[:-1]
-            extractor = determine_extractor(url)
-            metadata = Metadata(url, src, args, extractor, None)
+            metadata = Metadata(url, src, args)
             if metadata.id in self.config.extractor_configs:
                 config_extractor = metadata.id
             elif metadata.id in self.config.aliased_extractors:

@@ -101,7 +101,7 @@ RESTRICTED_ARGS = [
     "--batch-file",
 ]
 
-PLAYLIST_SLICE = re.compile(r"(.+)\[([\d:]+)]")
+PLAYLIST_SLICE = re.compile(r"(.+)\[([-\d:]+)]")
 
 
 @dataclass
@@ -128,6 +128,14 @@ class Metadata:
         self.args = converted_args
         if match := re.fullmatch(PLAYLIST_SLICE, self.url):
             self.url, slice = match.groups()
+            slice_parts = slice.split(":")
+            try:
+                assert len(slice_parts) <= 3
+                slice_parts = [str(int(p)) if p.strip() else "" for p in slice_parts]
+                slice = ":".join(slice_parts)
+            except (AssertionError, ValueError):
+                raise ValueError(f"Invalid slice format: {slice}")
+
             self.args.extend(["--playlist-items", slice])
         if not self.extractor:
             self.extractor = determine_extractor(self.url)

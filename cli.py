@@ -140,6 +140,9 @@ class Metadata:
         click.echo(f"[{self.extractor}] {msg}", err=err)
 
 
+ANSI_RESET = "\r\033[K"
+
+
 class Cli:
     def __init__(self, config: Config) -> None:
         self.config = config
@@ -196,7 +199,16 @@ class Cli:
 
         def hook(src: str, data: dict) -> None:
             metadata.processed = True
-            if data["status"] == "finished":
+            if (
+                src == "process"
+                and data["status"] == "downloading"
+                and "filename" in data
+                and data["filename"] not in metadata.files
+            ):
+                file = data["filename"]
+                metadata.files[file] = "downloading"
+                click.echo(f"{ANSI_RESET}\t{file}")
+            elif data["status"] == "finished":
                 files = []
                 if src == "process" and "filename" in data:
                     files.append(data["filename"])

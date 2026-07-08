@@ -135,3 +135,30 @@ def safe_dict(d: dict, *keys, default=None) -> Any:
             value = default
             break
     return value
+
+
+def validate_slice(spec: str) -> str:
+    try:
+        parts = spec.split(":")
+        assert 0 < len(parts) <= 3
+        spec = ":".join(str(int(p)) if p.strip() else "" for p in parts)
+    except (AssertionError, ValueError):
+        raise ValueError(f"Invalid slice spec: {spec}")
+    return spec
+
+
+def convert_playlist_slice(spec: str, list_size: int) -> str:
+    # spec should have already been validated
+    parts = []
+    for i, part in enumerate(spec.split(":")):
+        if i == 0 and not part:
+            part = "1"
+        elif i == 1 and not part:
+            part = str(list_size)
+        elif i < 2 and part:
+            index = int(part)
+            if index < 0:
+                index += list_size + 1
+            part = str(index)
+        parts.append(part)
+    return ":".join(parts)

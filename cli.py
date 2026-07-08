@@ -10,9 +10,11 @@ from tomlkit import array
 from yt_dlp import YoutubeDL
 
 from utils import ArgsConverter
+from utils import convert_playlist_slice
 from utils import determine_extractor
 from utils import safe_dict
 from utils import sanitize_args
+from utils import validate_slice
 
 
 @dataclass
@@ -127,16 +129,9 @@ class Metadata:
                 converted_args.append(arg)
         self.args = converted_args
         if match := re.fullmatch(PLAYLIST_SLICE, self.url):
-            self.url, slice = match.groups()
-            slice_parts = slice.split(":")
-            try:
-                assert len(slice_parts) <= 3
-                slice_parts = [str(int(p)) if p.strip() else "" for p in slice_parts]
-                slice = ":".join(slice_parts)
-            except (AssertionError, ValueError):
-                raise ValueError(f"Invalid slice format: {slice}")
-
-            self.args.extend(["--playlist-items", slice])
+            self.url, slice_spec = match.groups()
+            slice_spec = validate_slice(slice_spec)
+            self.args.extend(["--playlist-items", slice_spec])
         if not self.extractor:
             self.extractor = determine_extractor(self.url)
 
@@ -207,14 +202,8 @@ class Cli:
 
         def hook(src: str, data: dict) -> None:
             metadata.processed = True
-            if (
-                src == "process"
-                and data["status"] == "downloading"
-                and "filename" in data
-                and data["filename"] not in metadata.files
-            ):
+            if src == "process" and data["status"] == "finished" and "filename" in data:
                 file = data["filename"]
-                metadata.files[file] = "downloading"
                 click.echo(f"{ANSI_RESET}\t{file}")
             elif data["status"] == "finished":
                 files = []
@@ -235,6 +224,11 @@ class Cli:
         with YoutubeDL(opts) as ytdl:
             metadata.info = ytdl.extract_info(metadata.url, download=False)
             if metadata.info:
+                # some issue with ytdlp caching the playlist entries, so the original indices don't work
+                if slice_spec := ytdl.params.get("playlist_items", None):
+                    playlist_size = int(metadata.info["playlist_count"])
+                    converted_spec = convert_playlist_slice(slice_spec, playlist_size)
+                    ytdl.params["playlist_items"] = converted_spec
                 filename = ytdl.prepare_filename(metadata.info)
                 metadata.files[filename] = "pre-process"
                 ytdl.process_ie_result(metadata.info)

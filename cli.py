@@ -91,18 +91,6 @@ class Config:
             tomlkit.dump(self.doc, fp)
 
 
-RESTRICTED_ARGS = [
-    "-h",
-    "--help",
-    "-U",
-    "--update--update-to",
-    "--no-ignore-no-formats-error",
-    "--newline",
-    "--no-progress",
-    "-a",
-    "--batch-file",
-]
-
 PLAYLIST_SLICE = re.compile(r"(.+)\[([-\d:]+)]")
 
 
@@ -193,7 +181,7 @@ class Cli:
         else:
             args.extend(self.config.extractor_configs[metadata.config_extractor].args)
         args.extend(metadata.args)
-        args = sanitize_args(args, RESTRICTED_ARGS)
+        args = sanitize_args(args)
         if self.config.verbose:
             args.append("-v")
         if self.config.simulate:

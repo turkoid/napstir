@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
@@ -81,18 +82,74 @@ def has_downloadable_formats(info: dict) -> bool:
     return False
 
 
-def sanitize_args(raw_args: list[str], restricted_args: list[str] = None) -> list[str]:
-    sanitized_args = []
-    skip_args = False
+@dataclass(init=False)
+class Option:
+    names: list[str]
+    has_values: bool = False
+    restricted: bool = False
+    unique: bool = False
+
+    def __init__(self, *names: str, restricted: bool = False, unique: bool = False):
+        self.names = []
+        self.restricted = restricted
+        self.unique = unique
+        self.key: str = ""
+        for name in names:
+            name = name.strip()
+            if not name.startswith("-"):
+                raise ValueError(f"Invalid name: {name}")
+            if name not in self.names:
+                self.names.append(name)
+            if not self.key:
+                self.key = name
+                continue
+            if name.startswith("--") and not self.key.startswith("--"):
+                self.key = name
+        if not self.key:
+            raise ValueError("No valid name found")
+
+
+CLI_OPTIONS = [
+    Option("-h", "--help", restricted=True),
+    Option("-U", "--update", restricted=True),
+    Option("--update-to", restricted=True),
+    Option("--no-ignore-no-formats-error", restricted=True),
+    Option("--newline", restricted=True),
+    Option("--no-progress", restricted=True),
+    Option("-a", "--batch-file", restricted=True),
+    Option("--merge-output-format", unique=True),
+]
+
+CLI_OPTIONS_MAP: dict[str, Option] = {}
+for opt in CLI_OPTIONS:
+    for name in opt.names:
+        CLI_OPTIONS_MAP[name] = opt
+
+
+def sanitize_args(raw_args: list[str]) -> list[str]:
+    grouped_args: list[list[str] | None] = []
+    unique_args: dict[str, int] = {}
+    option_group = None
     for arg in raw_args:
         if arg.startswith("-"):
-            skip_args = False
-        if skip_args:
-            continue
-        if arg in restricted_args:
-            skip_args = True
-            continue
-        sanitized_args.append(arg)
+            option_group = None
+            if arg in CLI_OPTIONS_MAP:
+                opt = CLI_OPTIONS_MAP[arg]
+                if opt.restricted:
+                    continue
+                elif opt.unique:
+                    if opt.key in unique_args:
+                        index = unique_args[opt.key]
+                        grouped_args[index] = None
+                    unique_args[opt.key] = len(grouped_args)
+            option_group = [arg]
+            grouped_args.append(option_group)
+        elif option_group:
+            option_group.append(arg)
+    sanitized_args = []
+    for grp in grouped_args:
+        if grp:
+            sanitized_args.extend(grp)
     return sanitized_args
 
 
